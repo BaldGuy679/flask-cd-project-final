@@ -1,0 +1,21 @@
+[Unit]
+Description=Flask CD Dashboard - System Monitoring Web App
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/flask-cd-project
+Environment="PATH=/var/www/flask-cd-project/venv/bin"
+EnvironmentFile=/var/www/flask-cd-project/.env
+ExecStart=/var/www/flask-cd-project/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 0.0.0.0:5000 \
+    --access-logfile /var/log/flask-cd-project/access.log \
+    --error-logfile /var/log/flask-cd-project/error.log \
+    run:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

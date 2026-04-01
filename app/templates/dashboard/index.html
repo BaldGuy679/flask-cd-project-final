@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .page-header { margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-end; }
+  .page-title { font-family: var(--mono); font-size: 1.1rem; color: var(--accent); }
+  .page-sub { color: var(--muted); font-size: .78rem; margin-top: .2rem; font-family: var(--mono); }
+  .refresh-btn { font-size: .75rem; }
+
+  /* STAT CARDS */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 1.2rem 1.4rem; position: relative; overflow: hidden;
+    transition: border-color .2s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card-label { font-size: .72rem; color: var(--muted); font-family: var(--mono); letter-spacing: .1em; margin-bottom: .5rem; }
+  .card-value { font-family: var(--mono); font-size: 2rem; font-weight: 600; line-height: 1; }
+  .card-unit { font-size: .85rem; color: var(--muted); }
+  .card-sub { font-size: .72rem; color: var(--muted); margin-top: .4rem; }
+  .card-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: .8rem; }
+  .card-bar-fill { height: 100%; border-radius: 2px; transition: width .6s ease; }
+  .c-cpu { color: var(--accent); }
+  .c-mem { color: #a78bfa; }
+  .c-disk { color: var(--warn); }
+  .c-net { color: var(--success); }
+  .fill-cpu { background: var(--accent); }
+  .fill-mem { background: #a78bfa; }
+  .fill-disk { background: var(--warn); }
+
+  /* CHARTS */
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem; }
+  @media (max-width: 768px) { .charts { grid-template-columns: 1fr; } }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1.2rem; }
+  .chart-title { font-family: var(--mono); font-size: .78rem; color: var(--muted); letter-spacing: .08em; margin-bottom: 1rem; }
+  .chart-canvas { width: 100%; height: 180px; }
+
+  /* INFO ROW */
+  .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 600px) { .info-row { grid-template-columns: 1fr; } }
+  .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1.2rem; }
+  .info-title { font-family: var(--mono); font-size: .78rem; color: var(--muted); letter-spacing: .08em; margin-bottom: 1rem; }
+  .stat-row { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--border); font-size: .83rem; }
+  .stat-row:last-child { border: none; }
+  .stat-key { color: var(--muted); font-family: var(--mono); }
+  .stat-val { font-family: var(--mono); color: var(--text); }
+
+  /* LIVE INDICATOR */
+  .live-dot { width: 7px; height: 7px; background: var(--success); border-radius: 50%; display: inline-block; margin-right: .4rem; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+
+  .api-links a { color: var(--accent); font-family: var(--mono); font-size: .8rem; text-decoration: none; display: block; padding: .4rem 0; border-bottom: 1px solid var(--border); transition: padding-left .2s; }
+  .api-links a:hover { padding-left: .5rem; }
+  .api-links a:last-child { border: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title"><span class="live-dot"></span>System Monitor</div>
+    <div class="page-sub">Last updated: {{ now.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ total_snapshots }} snapshots recorded</div>
+  </div>
+  <a href="{{ url_for('dashboard.index') }}" class="btn btn-ghost refresh-btn">↻ Refresh</a>
+</div>
+
+<!-- STAT CARDS -->
+<div class="cards">
+  <div class="card">
+    <div class="card-label">CPU USAGE</div>
+    <div class="card-value c-cpu">{{ stats.cpu }}<span class="card-unit">%</span></div>
+    <div class="card-sub">Processor load</div>
+    <div class="card-bar"><div class="card-bar-fill fill-cpu" style="width:{{ stats.cpu }}%"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">MEMORY</div>
+    <div class="card-value c-mem">{{ stats.memory }}<span class="card-unit">%</span></div>
+    <div class="card-sub">{{ stats.memory_used }} / {{ stats.memory_total }} GB</div>
+    <div class="card-bar"><div class="card-bar-fill fill-mem" style="width:{{ stats.memory }}%"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">DISK USAGE</div>
+    <div class="card-value c-disk">{{ stats.disk }}<span class="card-unit">%</span></div>
+    <div class="card-sub">{{ stats.disk_used }} / {{ stats.disk_total }} GB</div>
+    <div class="card-bar"><div class="card-bar-fill fill-disk" style="width:{{ stats.disk }}%"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">NETWORK</div>
+    <div class="card-value c-net" style="font-size:1.4rem;">↑{{ stats.net_sent }}<span class="card-unit"> MB</span></div>
+    <div class="card-sub">↓ Recv: {{ stats.net_recv }} MB</div>
+    <div class="card-bar"><div class="card-bar-fill" style="width:60%;background:var(--success)"></div></div>
+  </div>
+</div>
+
+<!-- CHARTS -->
+<div class="charts">
+  <div class="chart-card">
+    <div class="chart-title">CPU HISTORY (%)</div>
+    <canvas id="cpuChart" class="chart-canvas"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">MEMORY HISTORY (%)</div>
+    <canvas id="memChart" class="chart-canvas"></canvas>
+  </div>
+</div>
+
+<!-- INFO ROW -->
+<div class="info-row">
+  <div class="info-card">
+    <div class="info-title">SYSTEM SUMMARY</div>
+    <div class="stat-row"><span class="stat-key">Registered Users</span><span class="stat-val">{{ user_count }}</span></div>
+    <div class="stat-row"><span class="stat-key">Total Snapshots</span><span class="stat-val">{{ total_snapshots }}</span></div>
+    <div class="stat-row"><span class="stat-key">CPU Usage</span><span class="stat-val">{{ stats.cpu }}%</span></div>
+    <div class="stat-row"><span class="stat-key">Memory Used</span><span class="stat-val">{{ stats.memory_used }} GB</span></div>
+    <div class="stat-row"><span class="stat-key">Disk Used</span><span class="stat-val">{{ stats.disk_used }} GB</span></div>
+    <div class="stat-row"><span class="stat-key">Net Sent</span><span class="stat-val">{{ stats.net_sent }} MB</span></div>
+  </div>
+  <div class="info-card">
+    <div class="info-title">API ENDPOINTS</div>
+    <div class="api-links">
+      <a href="{{ url_for('api.health') }}" target="_blank">GET /api/health</a>
+      <a href="{{ url_for('api.metrics_latest') }}" target="_blank">GET /api/metrics/latest</a>
+      <a href="{{ url_for('api.metrics_history') }}" target="_blank">GET /api/metrics/history</a>
+      <a href="{{ url_for('api.metrics_live') }}" target="_blank">GET /api/metrics/live</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+const labels = [{% for m in history %}"{{ m.timestamp.strftime('%H:%M:%S') }}"{% if not loop.last %},{% endif %}{% endfor %}];
+const cpuData = [{% for m in history %}{{ m.cpu_percent }}{% if not loop.last %},{% endif %}{% endfor %}];
+const memData = [{% for m in history %}{{ m.memory_percent }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+const chartOptions = (color) => ({
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#64748b', font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#1e2d40' } },
+    y: { min: 0, max: 100, ticks: { color: '#64748b', font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#1e2d40' } }
+  },
+  elements: { point: { radius: 2 }, line: { tension: 0.3 } }
+});
+
+const makeChart = (id, data, color) => new Chart(document.getElementById(id), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [{
+      data,
+      borderColor: color,
+      backgroundColor: color + '20',
+      fill: true,
+      borderWidth: 2
+    }]
+  },
+  options: chartOptions(color)
+});
+
+makeChart('cpuChart', cpuData, '#00e5ff');
+makeChart('memChart', memData, '#a78bfa');
+
+// Auto-refresh live data every 10s
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/metrics/live');
+    const d = await r.json();
+    if (d.status === 'ok') {
+      const vals = document.querySelectorAll('.card-value');
+      // minimal live update hint — full refresh for charts
+    }
+  } catch(e) {}
+}, 10000);
+{% endblock %}
