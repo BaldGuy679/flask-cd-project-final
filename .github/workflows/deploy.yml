@@ -7,10 +7,12 @@ on:
     branches: [ main ]
 
 jobs:
+  # ─────────────────────────────────────────
+  # JOB 1: Unit Testing
+  # ─────────────────────────────────────────
   test:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,6 +21,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
@@ -34,7 +44,11 @@ jobs:
         if: always()
         with:
           file: ./coverage.xml
+          # token tidak diperlukan untuk repo public
 
+  # ─────────────────────────────────────────
+  # JOB 2: Deploy ke VPS
+  # ─────────────────────────────────────────
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
@@ -50,14 +64,16 @@ jobs:
         run: echo "start=$(date +%s%3N)" >> $GITHUB_OUTPUT
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          port: 22
+          command_timeout: 5m
           script: |
             set -e
+
             echo "=== [1/5] Pulling latest code ==="
             cd /var/www/flask-cd-project
             git pull origin main
@@ -71,22 +87,42 @@ jobs:
 
             echo "=== [4/5] Restarting service ==="
             sudo systemctl restart flask-cd-project
+            sudo systemctl is-active --wait flask-cd-project
 
-            echo "=== [5/5] Health check ==="
-            sleep 3
-            curl -f http://localhost:5000/api/health || exit 1
-            echo "Deployment successful!"
+            echo "=== [5/5] Health check with retry ==="
+            sleep 5
+            for i in {1..10}; do
+              if curl -sf http://localhost:5000/api/health; then
+                echo "✅ Deployment successful!"
+                exit 0
+              fi
+              echo "Attempt $i/10 gagal, retry dalam 3s..."
+              sleep 3
+            done
+
+            echo "❌ Health check gagal. Log service:"
+            sudo journalctl -u flask-cd-project --no-pager -n 50
+            exit 1
 
       - name: Calculate deployment duration
         if: always()
         run: |
           END=$(date +%s%3N)
           START=${{ steps.timer.outputs.start }}
-          DURATION=$(( (END - START) ))
-          echo "### Deployment Metrics" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Duration | ${DURATION}ms |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          DURATION=$(( END - START ))
+          DURATION_SEC=$(echo "scale=2; $DURATION/1000" | bc)
+
+          if [ "${{ job.status }}" == "success" ]; then
+            STATUS="✅ Success"
+          else
+            STATUS="❌ Failed"
+          fi
+
+          echo "### 🚀 Deployment Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric        | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status        | ${STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration      | ${DURATION_SEC}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit        | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch        | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by  | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
