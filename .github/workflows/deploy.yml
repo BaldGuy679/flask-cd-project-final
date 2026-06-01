@@ -44,7 +44,6 @@ jobs:
         if: always()
         with:
           file: ./coverage.xml
-          # token tidak diperlukan untuk repo public
 
   # ─────────────────────────────────────────
   # JOB 2: Deploy ke VPS
@@ -73,12 +72,34 @@ jobs:
           command_timeout: 5m
           script: |
             set -e
+            APP_DIR="/var/www/flask-cd-project"
+            REPO_URL="https://github.com/BaldGuy679/flask-cd-project-final.git"
 
-            echo "=== [1/5] Pulling latest code ==="
-            cd /var/www/flask-cd-project
-            git pull origin main
+            echo "=== [1/5] Memastikan direktori & repo tersedia ==="
+            # Buat direktori jika belum ada
+            if [ ! -d "$APP_DIR" ]; then
+              sudo mkdir -p "$APP_DIR"
+              sudo chown $USER:$USER "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            # Clone jika belum ada repo, pull jika sudah ada
+            if [ ! -d ".git" ]; then
+              echo "Repo belum ada, cloning..."
+              git clone "$REPO_URL" .
+            else
+              echo "Repo sudah ada, pulling..."
+              git pull origin main
+            fi
 
             echo "=== [2/5] Installing dependencies ==="
+            # Buat venv jika belum ada
+            if [ ! -d "venv" ]; then
+              echo "Virtual env belum ada, membuat baru..."
+              python3 -m venv venv
+            fi
+
             source venv/bin/activate
             pip install -r requirements.txt --quiet
 
