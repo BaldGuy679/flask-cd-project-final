@@ -3,4 +3,4 @@ from flask import Blueprint
 bp = Blueprint('dashboard', __name__)
 
 from app.dashboard import routes
-#test pipeline 2
+#test pipeline 1
